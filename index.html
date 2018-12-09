@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title>Demo</title>
+        <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css" integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous">
+        <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.4.1/css/all.css" integrity="sha384-5sAR7xN1Nv6T6+dT2mhtzEpVJvfS3NScPQTrOxhwjIuvcA67KV2R5Jz6kr4abQsz" crossorigin="anonymous">
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+        <script type="text/javascript" src="lib/axios/dist/axios.standalone.js"></script>
+        <script type="text/javascript" src="lib/CryptoJS/rollups/hmac-sha256.js"></script>
+        <script type="text/javascript" src="lib/CryptoJS/rollups/sha256.js"></script>
+        <script type="text/javascript" src="lib/CryptoJS/components/hmac.js"></script>
+        <script type="text/javascript" src="lib/CryptoJS/components/enc-base64.js"></script>
+        <script type="text/javascript" src="lib/url-template/url-template.js"></script>
+        <script type="text/javascript" src="lib/apiGatewayCore/sigV4Client.js"></script>
+        <script type="text/javascript" src="lib/apiGatewayCore/apiGatewayClient.js"></script>
+        <script type="text/javascript" src="lib/apiGatewayCore/simpleHttpClient.js"></script>
+        <script type="text/javascript" src="lib/apiGatewayCore/utils.js"></script>
+        <script type="text/javascript" src="apigClient.js"></script>
+    </head>
+    <body>
+        <div class="row">
+            <div class="col-sm-5">
+                <div class="card text-center">
+                    <div class="card-header">
+                        <h1>Upload images</h1>
+                    </div>
+                    <div class="card-body" style="height:720px">
+                        <div class="row" id="upload">
+                            <div class="col-sm-8">
+                                <input type="file" id="uploadFile" accept="image/*" onchange="loadFile(event)">
+                            </div>
+                            <div class="col-sm-4">
+                                <button type="button" class="btn btn-primary" id="btnUpload" style="float:right;">Upload</button>
+                            </div>
+                        </div>
+                        <br><br>
+                        <div class="row">
+                            <img id="preview"/>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-7">
+                <div class="card text-center">
+                    <div class="card-header">
+                        <h1>Search your images</h1>
+                    </div>
+                    <div class="card-body" style="height:720px">
+                        <div class="row">
+                            <div class="input-group mb-3">
+                                <input type="text" id="queryString" class="form-control" placeholder="What do you want to search?">
+                                <div class="input-group-append">
+                                    <button class="btn btn-outline-secondary" id="btnSearch" type="button">Search</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row" id="resultImages"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            // apigclient with api keys
+            let apigClient = apigClientFactory.newClient({
+                apiKey: ""
+            });
+
+            function convertFileToDataURL(url, callback) {
+                let img = new Image();
+                img.crossOrigin = 'Anonymous';
+                img.onload = function() {
+                    let canvas = document.createElement('CANVAS');
+                    let ctx = canvas.getContext('2d');
+                    let dataURL;
+                    canvas.height = this.height;
+                    canvas.width = this.width;
+                    ctx.drawImage(this, 0, 0);
+                    dataURL = canvas.toDataURL('base64Img');
+                    callback(dataURL);
+                    canvas = null;
+                };
+                img.src = url;
+            }
+
+            let imageName;
+
+            function loadFile(event) {
+                let preview = document.getElementById('preview');
+                preview.src = URL.createObjectURL(event.target.files[0]);
+                imageName = event.target.files[0].name;
+                preview.width = '480';
+                preview.height = '480';
+            };
+
+            $('#btnUpload').click(function() {
+                console.log("Uploading...");
+                convertFileToDataURL(preview.src, function(base64Encoded) {
+                    base64Encoded = base64Encoded.split('base64,')[1]
+                    console.log("Got base64.");
+
+                    let params = {
+                        'item': imageName
+                    };
+                    let body = base64Encoded;
+                    let additionalParams = {
+                        headers: {
+                            'Content-Type': 'text/plain'
+                        }
+                    };
+
+                    apigClient.uploadItemPut(params, body, additionalParams)
+                        .then(function(result) {
+                            console.log('Upload result: ' + JSON.stringify(result));
+                            $('#preview').attr('src', 'uploadSuccess.png');
+                            $('#uploadFile').val('');
+                        }).catch(function(error) {
+                            console.log('Upload error: ' + JSON.stringify(error));
+                        });
+                });
+            });
+
+            $('#btnSearch').click(function() {
+                let query = $('#queryString').val();
+                let params = {
+                    'q': query
+                };
+                let body = {
+                    'q': query
+                };
+                let additionalParams = {
+                    headers: {}
+                };
+                apigClient.searchGet(params, body, additionalParams)
+                    .then(function(result) {
+                        document.getElementById('resultImages').innerHTML = "";
+                        console.log('Search result: ' + JSON.stringify(result));
+                        elems = [];
+                        if(result.data.hasOwnProperty('body')) {
+                            images = result.data.body.response;
+                            if (images.length == 0) {
+                                images.push('searchNotFound.png');
+                            }
+                        }
+                        else {
+                            images = ['badRequest.png'];
+                        }
+                        for(let i=0; i<images.length; i++) {
+                            elems[i] = document.createElement('img');
+                            elems[i].src = images[i];
+                            elems[i].width = '240';
+                            elems[i].height = '240';
+                            elems[i].margin = '5';
+                            document.getElementById('resultImages').appendChild(elems[i]);
+                        }
+                    }).catch(function(error) {
+                        console.log('Search error: ' + JSON.stringify(error));
+                    });
+            });
+        </script>
+
+    </body>
+</html>
